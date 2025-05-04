@@ -67,7 +67,7 @@ class GameOfLife:
 
 def animate_game(size=100, frames=200, interval=50):
     game = GameOfLife(size=size, random_seed=42)
-    fig = plt.figure(figsize=(12, 8))
+    fig = plt.figure(figsize=(16, 12))
     ax = fig.add_subplot(111, projection='3d')
     plt.style.use('dark_background')
 
@@ -88,16 +88,16 @@ def animate_game(size=100, frames=200, interval=50):
         colors = plt.cm.viridis(ages / 10)  # Normalize ages to [0,1] range
         
         # Draw spheres for live cells with age-based colors
-        ax.scatter(xs, ys, zs, s=60, c=colors, edgecolors='white', alpha=0.9, marker='o', depthshade=True)
+        ax.scatter(xs, ys, zs, s=100, c=colors, edgecolors='white', alpha=0.9, marker='o', depthshade=True)
         
         # Set limits and appearance
         ax.set_xlim(0, size)
         ax.set_ylim(0, size)
         ax.set_zlim(0, 1.5)
-        ax.set_title('Go and live among yourself', fontsize=14, pad=20)
-        ax.set_xlabel('X', labelpad=10)
-        ax.set_ylabel('Y', labelpad=10)
-        ax.set_zlabel('Alive', labelpad=10)
+        ax.set_title('Go and live among yourself', fontsize=16, pad=20)
+        ax.set_xlabel('X', labelpad=10, fontsize=12)
+        ax.set_ylabel('Y', labelpad=10, fontsize=12)
+        ax.set_zlabel('Alive', labelpad=10, fontsize=12)
         ax.view_init(elev=30, azim=frame * 1.8)
         ax.set_facecolor('black')
         fig.patch.set_facecolor('black')
