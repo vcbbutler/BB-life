@@ -10,8 +10,9 @@ class GameOfLife:
         if random_seed is not None:
             torch.manual_seed(random_seed)
         
-        # Initialize the grid on GPU
+        # Initialize the grid and age grid on GPU
         self.grid = torch.randint(0, 2, (size, size), dtype=torch.float32, device='cuda')
+        self.age_grid = torch.zeros((size, size), dtype=torch.float32, device='cuda')
         
         # Create convolution kernel for counting neighbors
         self.kernel = torch.tensor([
@@ -39,7 +40,7 @@ class GameOfLife:
         # Rule 2: Any live cell with 2 or 3 live neighbors lives
         # Rule 3: Any live cell with more than 3 live neighbors dies (overpopulation)
         # Rule 4: Any dead cell with exactly 3 live neighbors becomes alive (reproduction)
-        self.grid = torch.where(
+        new_grid = torch.where(
             (self.grid == 1) & ((neighbors < 2) | (neighbors > 3)),
             torch.tensor(0.0, device='cuda'),
             torch.where(
@@ -48,9 +49,21 @@ class GameOfLife:
                 self.grid
             )
         )
+        
+        # Update age grid
+        self.age_grid = torch.where(
+            new_grid == 1,
+            self.age_grid + 1,
+            torch.tensor(0.0, device='cuda')
+        )
+        
+        self.grid = new_grid
     
     def get_grid(self):
         return self.grid.cpu().numpy()
+    
+    def get_age_grid(self):
+        return self.age_grid.cpu().numpy()
 
 def animate_game(size=100, frames=200, interval=50):
     game = GameOfLife(size=size, random_seed=42)
@@ -62,13 +75,20 @@ def animate_game(size=100, frames=200, interval=50):
         ax.clear()
         game.update()
         grid = game.get_grid()
+        age_grid = game.get_age_grid()
         
         # Get coordinates of live cells
         xs, ys = np.where(grid == 1)
         zs = np.full_like(xs, 0.5, dtype=float)  # All spheres at z=0.5
         
-        # Draw spheres for live cells
-        ax.scatter(xs, ys, zs, s=60, c='cyan', edgecolors='white', alpha=0.9, marker='o', depthshade=True)
+        # Get ages of live cells
+        ages = age_grid[grid == 1]
+        
+        # Create color map based on age
+        colors = plt.cm.viridis(ages / 10)  # Normalize ages to [0,1] range
+        
+        # Draw spheres for live cells with age-based colors
+        ax.scatter(xs, ys, zs, s=60, c=colors, edgecolors='white', alpha=0.9, marker='o', depthshade=True)
         
         # Set limits and appearance
         ax.set_xlim(0, size)
