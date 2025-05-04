@@ -74,6 +74,11 @@ def animate_game(size=100, frames=200, interval=50, random_seed=None):
     ax = fig.add_subplot(111, projection='3d')
     plt.style.use('dark_background')
 
+    # Add a floor surface (outside the update loop)
+    floor_X, floor_Y = np.meshgrid(np.arange(size + 1), np.arange(size + 1))
+    floor_Z = np.zeros_like(floor_X)  # Floor at z=0
+    ax.plot_surface(floor_X, floor_Y, floor_Z, color='grey', alpha=0.2)
+
     # Create custom colormap with wider range of colors
     colors = [
         (0, 0.5, 0),      # Fresh green
@@ -83,41 +88,65 @@ def animate_game(size=100, frames=200, interval=50, random_seed=None):
     ]
     n_bins = 100
     custom_cmap = LinearSegmentedColormap.from_list("custom_life_colors", colors, N=n_bins)
+    
+    # Create fixed-size arrays for all possible points
+    max_points = size * size
+    xs = np.zeros(max_points)
+    ys = np.zeros(max_points)
+    zs = np.zeros(max_points)
+    colors = np.zeros((max_points, 4))  # RGBA colors
+    
+    # Set up the initial scatter plot that we'll update
+    scatter = ax.scatter(xs, ys, zs, s=100, c=colors, edgecolors='white', alpha=0.9, marker='o', depthshade=True)
+    
+    # Set limits and appearance (only once, not in the update function)
+    ax.set_xlim(0, size)
+    ax.set_ylim(0, size)
+    ax.set_zlim(0, 1.5)
+    ax.set_title('Go and live among yourself', fontsize=16, pad=20)
+    ax.set_xlabel('X', labelpad=10, fontsize=12)
+    ax.set_ylabel('Y', labelpad=10, fontsize=12)
+    ax.set_zlabel('Alive', labelpad=10, fontsize=12)
+    ax.set_facecolor('black')
+    fig.patch.set_facecolor('black')
+    ax.grid(False)
+    ax.xaxis.pane.fill = False
+    ax.yaxis.pane.fill = False
+    ax.zaxis.pane.fill = False
 
     def update(frame):
-        ax.clear()
         game.update()
         grid = game.get_grid()
         age_grid = game.get_age_grid()
         
         # Get coordinates of live cells
-        xs, ys = np.where(grid == 1)
-        zs = np.full_like(xs, 0.5, dtype=float)  # All spheres at z=0.5
+        live_xs, live_ys = np.where(grid == 1)
+        live_zs = np.full_like(live_xs, 0.5, dtype=float)
         
         # Get ages of live cells
-        ages = age_grid[grid == 1]
+        live_ages = age_grid[grid == 1]
         
         # Create color map based on age using custom colormap
-        colors = custom_cmap(ages / 15)  # Increased age normalization for smoother transitions
+        live_colors = custom_cmap(live_ages / 15)
         
-        # Draw spheres for live cells with age-based colors
-        ax.scatter(xs, ys, zs, s=100, c=colors, edgecolors='white', alpha=0.9, marker='o', depthshade=True)
+        # Update the fixed-size arrays
+        n_live = len(live_xs)
+        xs[:n_live] = live_xs
+        ys[:n_live] = live_ys
+        zs[:n_live] = live_zs
+        colors[:n_live] = live_colors
         
-        # Set limits and appearance
-        ax.set_xlim(0, size)
-        ax.set_ylim(0, size)
-        ax.set_zlim(0, 1.5)
-        ax.set_title('Go and live among yourself', fontsize=16, pad=20)
-        ax.set_xlabel('X', labelpad=10, fontsize=12)
-        ax.set_ylabel('Y', labelpad=10, fontsize=12)
-        ax.set_zlabel('Alive', labelpad=10, fontsize=12)
-        ax.view_init(elev=30, azim=frame * 1.8)
-        ax.set_facecolor('black')
-        fig.patch.set_facecolor('black')
-        ax.grid(False)
-        ax.xaxis.pane.fill = False
-        ax.yaxis.pane.fill = False
-        ax.zaxis.pane.fill = False
+        # Set remaining points to be invisible
+        xs[n_live:] = 0
+        ys[n_live:] = 0
+        zs[n_live:] = -1  # Place below the floor
+        colors[n_live:] = [0, 0, 0, 0]  # Transparent
+        
+        # Update scatter plot data
+        scatter._offsets3d = (xs, ys, zs)
+        scatter.set_color(colors)
+        
+        return scatter,
 
     anim = FuncAnimation(fig, update, frames=frames, interval=interval, blit=False)
     plt.show()
