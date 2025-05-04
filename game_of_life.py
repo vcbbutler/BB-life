@@ -260,10 +260,22 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=D
     # Initialize simulation state
     running = False
     generation = 0
+    
+    # Stability detection variables
+    previous_cell_count = -1
+    stable_generations = 0
+    STABILITY_THRESHOLD = 5  # Number of consecutive generations with same cell count to consider stable
 
     def update(ev):
-        nonlocal running, generation
+        nonlocal running, generation, previous_cell_count, stable_generations
         if not running:
+            return
+        
+        # Check if simulation has reached stability
+        if stable_generations >= STABILITY_THRESHOLD:
+            running = False
+            text.text = f'STABLE AFTER {generation} GENERATIONS\nLive Cells: {previous_cell_count}\nPress SPACE to restart'
+            print(f"Simulation stabilized after {generation} generations with {previous_cell_count} cells")
             return
             
         # Update game state multiple times per frame if frame_skip > 1
@@ -276,6 +288,13 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=D
         
         # Count live cells
         live_cells = int(grid.sum())
+        
+        # Check for stability
+        if live_cells == previous_cell_count:
+            stable_generations += 1
+        else:
+            stable_generations = 0
+            previous_cell_count = live_cells
         
         # Update generation counter and live cell count
         text.text = f'Generation: {generation}\nLive Cells: {live_cells}'
@@ -313,8 +332,13 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=D
         canvas.update()
 
     def on_key_press(event):
-        nonlocal running
+        nonlocal running, generation, previous_cell_count, stable_generations
         if event.key == ' ':
+            if not running:
+                # Reset stability detection if restarting
+                stable_generations = 0
+                previous_cell_count = -1
+                
             running = not running
             if running:
                 live_cells = int(game.get_grid().sum())
