@@ -5,11 +5,11 @@ import vispy.scene
 from vispy.scene import visuals
 import time
 import argparse
-from vispy.color import ColorArray
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, 
                             QLabel, QSpinBox, QDoubleSpinBox, QPushButton, 
                             QComboBox, QGroupBox, QFormLayout)
+from vispy.color import ColorArray
 
 # Debug CUDA configuration
 print("\n=== CUDA Configuration ===")
@@ -275,8 +275,8 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=D
         # Create positions array
         pos = np.column_stack((live_xs, live_ys, live_zs))
         
-        # Create colors array
-        colors = np.array([get_color(age) for age in live_ages])
+        # Create colors array using ColorArray
+        colors = ColorArray([get_color(age) for age in live_ages])
 
         # --- Scale marker size with distance from camera ---
         # Get camera position in world coordinates
