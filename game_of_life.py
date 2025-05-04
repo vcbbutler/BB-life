@@ -71,6 +71,22 @@ class SettingsDialog(QDialog):
         self.frame_skip_spin.setValue(1)
         anim_layout.addRow("Frame Skip:", self.frame_skip_spin)
         
+        # --- Mutation Rates ---
+        self.oscillator_rate_spin = QDoubleSpinBox()
+        self.oscillator_rate_spin.setRange(0.0, 0.5)
+        self.oscillator_rate_spin.setValue(0.01)
+        self.oscillator_rate_spin.setSingleStep(0.01)
+        self.oscillator_rate_spin.setDecimals(3)
+        anim_layout.addRow("Oscillator Mutation Rate:", self.oscillator_rate_spin)
+        
+        self.stable_rate_spin = QDoubleSpinBox()
+        self.stable_rate_spin.setRange(0.0, 0.5)
+        self.stable_rate_spin.setValue(0.01)
+        self.stable_rate_spin.setSingleStep(0.01)
+        self.stable_rate_spin.setDecimals(3)
+        anim_layout.addRow("Stable Mutation Rate:", self.stable_rate_spin)
+        # --------------------
+        
         anim_group.setLayout(anim_layout)
         layout.addWidget(anim_group)
         
@@ -106,15 +122,24 @@ class SettingsDialog(QDialog):
         self.cancel_button.clicked.connect(self.reject)
 
 class GameOfLife:
-    def __init__(self, size=DEFAULT_SIZE, initial_density=DEFAULT_INITIAL_DENSITY, random_seed=None, device='cuda'):
+    def __init__(self, size=DEFAULT_SIZE, initial_density=DEFAULT_INITIAL_DENSITY, random_seed=None, device='cuda', 
+                 oscillator_mutation_rate=0.01, stable_mutation_rate=0.01):
         self.size = size
         self.device = device if torch.cuda.is_available() and device == 'cuda' else 'cpu'
+        self.oscillator_mutation_rate = oscillator_mutation_rate
+        self.stable_mutation_rate = stable_mutation_rate
+        
         if random_seed is not None:
             torch.manual_seed(random_seed)
         
-        # Initialize the grid with specified density
+        # Initialize the grid and age grid
         self.grid = torch.bernoulli(torch.full((size, size), initial_density, device=self.device))
         self.age_grid = torch.zeros((size, size), dtype=torch.float32, device=self.device)
+        
+        # Initialize history grids (t-2, t-3, t-4)
+        self.grid_t_minus_2 = torch.zeros_like(self.grid, device=self.device) 
+        self.grid_t_minus_3 = torch.zeros_like(self.grid, device=self.device)
+        self.grid_t_minus_4 = torch.zeros_like(self.grid, device=self.device)
         
         # Create convolution kernel for counting neighbors
         self.kernel = torch.tensor([
@@ -129,41 +154,101 @@ class GameOfLife:
         self.reproduce = torch.tensor(1.0, device=self.device)
     
     def update(self):
-        # Pad the grid with circular boundaries using torch.nn.functional.pad
-        # Ensure grid is float32 for padding if it isn't already
-        grid_float = self.grid.float() 
-        padded_grid = torch.nn.functional.pad(
-            grid_float.unsqueeze(0).unsqueeze(0), # Add batch and channel dims
-            (1, 1, 1, 1),                      # Pad by 1 on all sides (left, right, top, bottom)
-            mode='circular'
-        ) # Keep batch and channel dims for conv2d
+        # Store the grid state from t-1 before it's updated
+        grid_t_minus_1 = self.grid.clone() 
+        # Store grid state from t-4 for the stability check below
+        grid_t_minus_4_snapshot = self.grid_t_minus_4.clone() 
         
-        # Count neighbors using convolution
+        # Shift history grids forward (t-4 becomes t-3, t-3 becomes t-2, t-2 becomes t-1)
+        # The current self.grid (t-1) becomes grid_t_minus_2 for the *next* iteration's check
+        self.grid_t_minus_4 = self.grid_t_minus_3
+        self.grid_t_minus_3 = self.grid_t_minus_2
+        self.grid_t_minus_2 = grid_t_minus_1 
+
+        # Pad the grid (state at t-1) with circular boundaries
+        grid_float = grid_t_minus_1.float() # Use the t-1 state for neighbor calculation
+        padded_grid = torch.nn.functional.pad(
+            grid_float.unsqueeze(0).unsqueeze(0), 
+            (1, 1, 1, 1),                      
+            mode='circular'
+        ) 
+        
+        # Count neighbors based on t-1 state
         neighbors = torch.nn.functional.conv2d(
             padded_grid, 
             self.kernel,
-            padding=0 # No padding needed as it's handled above
-        ).squeeze() # Remove batch and channel dims after conv
+            padding=0 
+        ).squeeze() 
         
-        # Apply Game of Life rules using pre-allocated tensors
-        # Ensure comparison tensors match the device and potentially dtype of neighbors and grid
-        # (Assuming grid elements are 0.0 or 1.0 after bernoulli/update)
-        is_alive = (self.grid == 1.0)
-        is_dead = ~is_alive # Equivalent to self.grid == 0.0
+        # Apply standard Game of Life rules based on t-1 state
+        is_alive_t_minus_1 = (grid_t_minus_1 == 1.0)
+        is_dead_t_minus_1 = ~is_alive_t_minus_1 
 
-        survives = is_alive & ((neighbors == 2) | (neighbors == 3))
-        births = is_dead & (neighbors == 3)
+        survives = is_alive_t_minus_1 & ((neighbors == 2) | (neighbors == 3))
+        births = is_dead_t_minus_1 & (neighbors == 3)
 
-        new_grid = torch.zeros_like(self.grid)
-        new_grid[survives | births] = 1.0
+        # Calculate potential new grid state at time t (before any mutations)
+        new_grid_potential = torch.zeros_like(self.grid)
+        new_grid_potential[survives | births] = 1.0
         
-        # Update age grid
+        # 1. Identify mutation triggers (based on potential state at t and history)
+        is_oscillator = (self.grid_t_minus_2 == 1.0) & (grid_t_minus_1 == 0.0) & (new_grid_potential == 1.0)
+        is_stable = (
+            (new_grid_potential == 1.0) & 
+            (grid_t_minus_1 == 1.0) & 
+            (self.grid_t_minus_2 == 1.0) & 
+            (self.grid_t_minus_3 == 1.0) & 
+            (grid_t_minus_4_snapshot == 1.0) 
+        )
+        
+        # Determine which triggers fire based on rates
+        oscillator_triggers_fired = is_oscillator & (torch.rand_like(new_grid_potential, device=self.device) < self.oscillator_mutation_rate)
+        stable_triggers_fired = is_stable & (torch.rand_like(new_grid_potential, device=self.device) < self.stable_mutation_rate)
+        
+        # Combine all active triggers
+        active_triggers = oscillator_triggers_fired | stable_triggers_fired
+        
+        # Initialize the grid for this step with the potential state
+        new_grid = new_grid_potential.clone()
+        
+        # 2. Determine mutation targets (self or neighbor) and apply flips
+        if torch.any(active_triggers):
+            trigger_coords = active_triggers.nonzero(as_tuple=False).cpu().numpy() # Get coords on CPU
+            cells_to_flip = torch.zeros_like(new_grid, dtype=torch.bool, device=self.device)
+
+            # Define neighbor offsets
+            neighbor_offsets = torch.tensor([
+                [-1, -1], [-1, 0], [-1, 1],
+                [ 0, -1],          [ 0, 1],
+                [ 1, -1], [ 1, 0], [ 1, 1]
+            ], dtype=torch.long)
+
+            for coord in trigger_coords:
+                r, c = coord[0], coord[1]
+                
+                # Decide whether to mutate self or neighbor (50/50 chance)
+                if torch.rand(1).item() < 0.5:
+                    # Target self
+                    cells_to_flip[r, c] = True
+                else:
+                    # Target random neighbor
+                    offset_idx = torch.randint(0, 8, (1,)).item()
+                    offset = neighbor_offsets[offset_idx]
+                    nr = (r + offset[0]) % self.size # Apply toroidal wrapping
+                    nc = (c + offset[1]) % self.size
+                    cells_to_flip[nr, nc] = True
+            
+            # Apply the flips to the new_grid (0 -> 1, 1 -> 0)
+            new_grid[cells_to_flip] = 1.0 - new_grid[cells_to_flip]
+
+        # Update age grid based on the final mutated new_grid
         self.age_grid = torch.where(
             new_grid == 1.0,
             self.age_grid + 1,
             torch.tensor(0.0, device=self.device)
         )
         
+        # Update the main grid state to the final mutated state for the next iteration
         self.grid = new_grid
     
     def get_grid(self):
@@ -254,7 +339,9 @@ class SparseGameOfLife:
             grid[x, y] = age
         return grid
 
-def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=DEFAULT_INITIAL_DENSITY, frame_skip=1, device='cuda', use_sparse=False):
+def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=DEFAULT_INITIAL_DENSITY, 
+                   frame_skip=1, device='cuda', use_sparse=False, 
+                   oscillator_mutation_rate=0.01, stable_mutation_rate=0.01):
     if frame_skip < 1:
         raise ValueError("frame_skip must be at least 1")
     if size <= 0:
@@ -267,7 +354,9 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=D
         print("Using sparse algorithm for efficient large grid processing")
         game = SparseGameOfLife(size=size, initial_density=initial_density, random_seed=None, device=device)
     else:
-        game = GameOfLife(size=size, initial_density=initial_density, random_seed=None, device=device)
+        # Pass mutation rates from arguments
+        game = GameOfLife(size=size, initial_density=initial_density, random_seed=None, device=device, 
+                          oscillator_mutation_rate=oscillator_mutation_rate, stable_mutation_rate=stable_mutation_rate)
     
     # Create a canvas and view
     canvas = vispy.scene.SceneCanvas(keys='interactive', size=(1920, 1080), resizable=True, show=True)
@@ -435,29 +524,78 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=D
     vispy.app.run()
 
 def main():
+    parser = argparse.ArgumentParser(description="Conway's Game of Life with VisPy Visualization")
+    parser.add_argument("--size", type=int, default=DEFAULT_SIZE, help="Grid size (width and height)")
+    parser.add_argument("--interval", type=int, default=DEFAULT_INTERVAL, help="Update interval in milliseconds")
+    parser.add_argument("--density", type=float, default=DEFAULT_INITIAL_DENSITY, help="Initial density of live cells (0.1 to 0.9)")
+    parser.add_argument("--frame_skip", type=int, default=1, help="Number of game updates per frame")
+    parser.add_argument("--device", type=str, default='cuda' if torch.cuda.is_available() else 'cpu', choices=['cuda', 'cpu'], help="Computation device ('cuda' or 'cpu')")
+    parser.add_argument("--oscillator_mutation_rate", type=float, default=0.01, help="Mutation rate for oscillator cells (1->0->1 pattern)")
+    parser.add_argument("--stable_mutation_rate", type=float, default=0.01, help="Mutation rate for stable cells")
+    parser.add_argument("--use_sparse", action='store_true', help="Force use of sparse algorithm (auto for size > 2000)")
+    parser.add_argument("--no_gui", action='store_true', help="Run simulation directly with command-line args, skipping GUI")
+    
+    args = parser.parse_args()
+    
     # Create Qt application
     app = QApplication([])
     
-    # Debug CUDA information
+    # Debug CUDA information (moved outside the loop)
     print(f"CUDA available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"CUDA device count: {torch.cuda.device_count()}")
         print(f"CUDA device name: {torch.cuda.get_device_name(0)}")
-    
-    # Show settings dialog
-    settings = SettingsDialog()
-    if settings.exec_() != QDialog.Accepted:
-        return
-    
-    # Get settings values
-    size = settings.size_spin.value()
-    initial_density = settings.density_spin.value()
-    interval = settings.interval_spin.value()
-    frame_skip = settings.frame_skip_spin.value()
-    device = settings.device_combo.currentText()
-    
-    # Determine if we should use sparse algorithm
-    use_sparse = size > 2000
+
+    if args.no_gui:
+        # Use command-line arguments directly
+        size = args.size
+        initial_density = args.density
+        interval = args.interval
+        frame_skip = args.frame_skip
+        device_text = args.device # 'cuda' or 'cpu'
+        oscillator_mutation_rate = args.oscillator_mutation_rate
+        stable_mutation_rate = args.stable_mutation_rate
+        use_sparse_flag = args.use_sparse or size > 2000
+        
+        # Validate device selection again based on availability
+        if device_text == 'cuda' and not torch.cuda.is_available():
+            print("Warning: CUDA requested but not available, falling back to CPU.")
+            device_text = 'cpu'
+        
+        print("\n--- Running with Command-Line Settings --- ")
+        print(f"Size: {size}, Density: {initial_density:.2f}, Interval: {interval}ms, Frame Skip: {frame_skip}")
+        print(f"Device: {device_text}, Oscillator Rate: {oscillator_mutation_rate:.3f}, Stable Rate: {stable_mutation_rate:.3f}")
+        print(f"Using Sparse: {use_sparse_flag}")
+        print("----------------------------------------\n")
+    else:
+        # Show settings dialog, initializing with args
+        settings = SettingsDialog()
+        settings.size_spin.setValue(args.size)
+        settings.density_spin.setValue(args.density)
+        settings.interval_spin.setValue(args.interval)
+        settings.frame_skip_spin.setValue(args.frame_skip)
+        settings.oscillator_rate_spin.setValue(args.oscillator_mutation_rate)
+        settings.stable_rate_spin.setValue(args.stable_mutation_rate)
+        # Set device combo based on arg and availability
+        if args.device == 'cuda' and torch.cuda.is_available():
+            settings.device_combo.setCurrentIndex(settings.device_combo.findData('cuda'))
+        else:
+            settings.device_combo.setCurrentIndex(settings.device_combo.findData('cpu'))
+            
+        if settings.exec_() != QDialog.Accepted:
+            return
+        
+        # Get settings values from dialog
+        size = settings.size_spin.value()
+        initial_density = settings.density_spin.value()
+        interval = settings.interval_spin.value()
+        frame_skip = settings.frame_skip_spin.value()
+        device_text = settings.device_combo.currentData() # Get 'cuda' or 'cpu' from data
+        oscillator_mutation_rate = settings.oscillator_rate_spin.value()
+        stable_mutation_rate = settings.stable_rate_spin.value()
+        
+        # Determine if we should use sparse algorithm (use_sparse arg overrides size check)
+        use_sparse_flag = args.use_sparse or size > 2000
     
     # Run the animation with settings
     animate_game(
@@ -465,8 +603,10 @@ def main():
         interval=interval,
         initial_density=initial_density,
         frame_skip=frame_skip,
-        device=device,
-        use_sparse=use_sparse
+        device=device_text,
+        use_sparse=use_sparse_flag,
+        oscillator_mutation_rate=oscillator_mutation_rate,
+        stable_mutation_rate=stable_mutation_rate
     )
 
 if __name__ == "__main__":
