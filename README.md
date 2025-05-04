@@ -1,4 +1,5 @@
 # Conway's Game of Life with GPU Acceleration
+![Demo of Conway's Game of Life](demo.gif)
 
 A 3D visualization of Conway's Game of Life using:
 - PyTorch for GPU-accelerated game logic
