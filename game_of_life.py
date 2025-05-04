@@ -1,14 +1,14 @@
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
-from mpl_toolkits.mplot3d import Axes3D
+import vispy
+import vispy.scene
+from vispy.scene import visuals
 import time
-import argparse  # Add argparse for command line arguments
-from matplotlib.colors import LinearSegmentedColormap
+import argparse
+from vispy.color import ColorArray
 
 class GameOfLife:
-    def __init__(self, size=100, random_seed=None):
+    def __init__(self, size=200, random_seed=None):
         self.size = size
         if random_seed is not None:
             torch.manual_seed(random_seed)
@@ -24,8 +24,13 @@ class GameOfLife:
             [1, 1, 1]
         ], dtype=torch.float32, device='cuda').view(1, 1, 3, 3)
         
-        # Pad the grid for convolution
+        # Pre-allocate padded grid to avoid memory allocation during updates
         self.padded_grid = torch.zeros((size + 2, size + 2), dtype=torch.float32, device='cuda')
+        
+        # Pre-allocate tensors for rules to avoid memory allocation
+        self.underpop = torch.tensor(0.0, device='cuda')
+        self.overpop = torch.tensor(0.0, device='cuda')
+        self.reproduce = torch.tensor(1.0, device='cuda')
     
     def update(self):
         # Update the padded grid
@@ -38,17 +43,13 @@ class GameOfLife:
             padding=0
         ).squeeze()
         
-        # Apply Game of Life rules
-        # Rule 1: Any live cell with fewer than 2 live neighbors dies (underpopulation)
-        # Rule 2: Any live cell with 2 or 3 live neighbors lives
-        # Rule 3: Any live cell with more than 3 live neighbors dies (overpopulation)
-        # Rule 4: Any dead cell with exactly 3 live neighbors becomes alive (reproduction)
+        # Apply Game of Life rules using pre-allocated tensors
         new_grid = torch.where(
             (self.grid == 1) & ((neighbors < 2) | (neighbors > 3)),
-            torch.tensor(0.0, device='cuda'),
+            self.underpop,
             torch.where(
                 (self.grid == 0) & (neighbors == 3),
-                torch.tensor(1.0, device='cuda'),
+                self.reproduce,
                 self.grid
             )
         )
@@ -68,69 +69,59 @@ class GameOfLife:
     def get_age_grid(self):
         return self.age_grid.cpu().numpy()
 
-def animate_game(size=100, frames=200, interval=50, random_seed=None):
+def animate_game(size=200, frames=200, interval=50, random_seed=None, frame_skip=1):
     game = GameOfLife(size=size, random_seed=random_seed)
-    fig = plt.figure(figsize=(16, 12))
-    ax = fig.add_subplot(111, projection='3d')
-    plt.style.use('dark_background')
-
-    # Make the axes fill the entire figure (remove left/right margins)
-    ax.set_position([0, 0, 1, 1])
-
-    # Add a floor surface (outside the update loop)
-    floor_X, floor_Y = np.meshgrid(np.arange(size + 1), np.arange(size + 1))
-    floor_Z = np.zeros_like(floor_X)  # Floor at z=0
-    ax.plot_surface(floor_X, floor_Y, floor_Z, color='grey', alpha=0.2)
-
-    # Create custom colormap with wider range of colors
-    colors = [
-        (0, 0.5, 0),      # Fresh green
-        (0.5, 0.5, 0),    # Yellow
-        (0.8, 0.3, 0),    # Red
-        (0.5, 0.3, 0)     # Brown
-    ]
-    n_bins = 100
-    custom_cmap = LinearSegmentedColormap.from_list("custom_life_colors", colors, N=n_bins)
     
-    # Create fixed-size arrays for all possible points
-    max_points = size * size
-    xs = np.zeros(max_points)
-    ys = np.zeros(max_points)
-    zs = np.zeros(max_points)
-    colors = np.zeros((max_points, 4))  # RGBA colors
-    
-    # Set up the initial scatter plot that we'll update
-    scatter = ax.scatter(xs, ys, zs, s=100, c=colors, edgecolors='white', alpha=0.9, marker='o', depthshade=True)
-    
-    # Set limits and appearance (only once, not in the update function)
-    ax.set_xlim(0, size)
-    ax.set_ylim(0, size)
-    ax.set_zlim(0, 1.5)
-    ax.set_title('Go and live among yourself', fontsize=16, pad=20)
-    ax.set_xlabel('X', labelpad=10, fontsize=12)
-    ax.set_ylabel('Y', labelpad=10, fontsize=12)
-    ax.set_zlabel('Alive', labelpad=10, fontsize=12)
-    ax.set_facecolor('black')
-    fig.patch.set_facecolor('black')
-    ax.grid(False)
-    ax.xaxis.pane.fill = False
-    ax.yaxis.pane.fill = False
-    ax.zaxis.pane.fill = False
-    ax.xaxis.pane.set_edgecolor('none')
-    ax.yaxis.pane.set_edgecolor('none')
-    ax.zaxis.pane.set_edgecolor('none')
+    # Create a canvas and view
+    canvas = vispy.scene.SceneCanvas(keys='interactive', size=(800, 600), show=True)
+    view = canvas.central_widget.add_view()
+    view.camera = 'turntable'
+    view.camera.fov = 45
+    view.camera.distance = size * 1.5
 
-    # Adjust the view angle (elevation and azimuth)
-    ax.view_init(elev=20, azim=-45)  # Lower elevation, different angle
+    # Create scatter plot
+    scatter = visuals.Markers()
+    view.add(scatter)
 
-    # Remove margins
-    fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+    # Initialize with empty data
+    pos = np.zeros((1, 3))
+    colors = np.array([(0, 0, 0, 0)])  # Transparent
+    scatter.set_data(pos, edge_color='white', face_color=colors, size=10)
 
-    # Turn off axes completely
-    ax.set_axis_off()
+    # Create floor
+    floor_vertices = np.array([
+        [0, 0, 0],
+        [size, 0, 0],
+        [size, size, 0],
+        [0, size, 0]
+    ])
+    floor_faces = np.array([[0, 1, 2], [0, 2, 3]])
+    floor = visuals.Mesh(vertices=floor_vertices, faces=floor_faces, color=(0.5, 0.5, 0.5, 0.2))
+    view.add(floor)
 
-    def update(frame):
-        game.update()
+    # Set up the view
+    view.camera.set_range()
+    view.camera.elevation = 20
+    view.camera.azimuth = -45
+    view.camera.distance = size * 1.5
+
+    # Create color map for ages
+    def get_color(age):
+        age = min(age / 15.0, 1.0)
+        if age < 0.33:
+            return (0, 0.5, 0, 0.9)  # Green
+        elif age < 0.66:
+            return (0.5, 0.5, 0, 0.9)  # Yellow
+        elif age < 0.9:
+            return (0.8, 0.3, 0, 0.9)  # Red
+        else:
+            return (0.5, 0.3, 0, 0.9)  # Brown
+
+    def update(ev):
+        # Update game state multiple times per frame if frame_skip > 1
+        for _ in range(frame_skip):
+            game.update()
+            
         grid = game.get_grid()
         age_grid = game.get_age_grid()
         
@@ -141,36 +132,35 @@ def animate_game(size=100, frames=200, interval=50, random_seed=None):
         # Get ages of live cells
         live_ages = age_grid[grid == 1]
         
-        # Create color map based on age using custom colormap
-        live_colors = custom_cmap(live_ages / 15)
+        # Create positions array
+        pos = np.column_stack((live_xs, live_ys, live_zs))
         
-        # Update the fixed-size arrays
-        n_live = len(live_xs)
-        xs[:n_live] = live_xs
-        ys[:n_live] = live_ys
-        zs[:n_live] = live_zs
-        colors[:n_live] = live_colors
+        # Create colors array
+        colors = np.array([get_color(age) for age in live_ages])
         
-        # Set remaining points to be invisible
-        xs[n_live:] = 0
-        ys[n_live:] = 0
-        zs[n_live:] = -1  # Place below the floor
-        colors[n_live:] = [0, 0, 0, 0]  # Transparent
+        # Update scatter plot
+        scatter.set_data(pos, edge_color='white', face_color=colors, size=10)
         
-        # Update scatter plot data
-        scatter._offsets3d = (xs, ys, zs)
-        scatter.set_color(colors)
-        
-        return scatter,
+        # Force redraw
+        canvas.update()
 
-    anim = FuncAnimation(fig, update, frames=frames, interval=interval, blit=False)
-    plt.show()
+    # Create timer
+    timer = vispy.app.Timer(interval=interval/1000.0)  # Convert ms to seconds
+    timer.connect(update)
+    timer.start()
+
+    # Run the app
+    vispy.app.run()
 
 if __name__ == "__main__":
     # Set up command line argument parsing
     parser = argparse.ArgumentParser(description='Game of Life with customizable seeding')
     parser.add_argument('--seed', type=str, default='time',
                       help='Seed type: "none" for no seed, "time" for time-based seed, or a number for custom seed')
+    parser.add_argument('--interval', type=int, default=50,
+                      help='Animation interval in milliseconds')
+    parser.add_argument('--frame-skip', type=int, default=1,
+                      help='Number of game updates per frame')
     args = parser.parse_args()
 
     # Check if CUDA is available
@@ -196,5 +186,5 @@ if __name__ == "__main__":
             random_seed = int(time.time())
             print(f"Using time-based seed: {random_seed}")
     
-    # Run the animation
-    animate_game(size=100, frames=200, interval=50, random_seed=random_seed) 
+    # Run the animation with command line arguments
+    animate_game(size=200, frames=200, interval=args.interval, random_seed=random_seed, frame_skip=args.frame_skip) 
