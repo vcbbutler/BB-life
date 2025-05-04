@@ -90,7 +90,11 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None,
     view = canvas.central_widget.add_view()
     view.camera = 'turntable'
     view.camera.fov = 45
-    view.camera.distance = size * 1.5
+    view.camera.distance = size * 1
+
+    # Create text display for generation counter
+    text = visuals.Text('Generation: 0', pos=(100, 50), color='white', font_size=12, parent=canvas.scene)
+    text.order = 1  # Ensure text is drawn on top
 
     # Create scatter plot
     scatter = visuals.Markers()
@@ -121,10 +125,11 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None,
     # Create color map for ages
     def get_color(age):
         # Use a non-linear scale: very quick initial phase, longer taper
-        if age < 10:  # Quick initial phase (0-50)
-            normalized_age = age / 10.0
-            if normalized_age < 0.2:
-                return (0.3, 0.8, 0, 0.9)  # Less green, more yellow-green
+        if age < 20:  # Quick initial phase (0-10)
+            normalized_age = age / 20.0
+            if normalized_age < 0.1:
+                return (0.0, 0.8, 0, 0.9)  # Less green, more yellow-green
+
             elif normalized_age < 0.4:
                 return (0.6, 0.8, 0, 0.9)  # Yellow-green
             elif normalized_age < 0.6:
@@ -139,8 +144,10 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None,
                 return (1.0, 0.3, 0, 0.9)  # Red-orange
             else:
                 return (0.8, 0.2, 0, 0.9)  # Brown
-        else:  # Final dark stage (200-400)
+        elif age < 100:
             return (0.4, 0.1, 0, 0.9)  # Dark brown
+        else:
+            return (0.2, 0.05, 0, 0.9)  # Very dark brown
 
     def update(ev):
         # Update game state multiple times per frame if frame_skip > 1
@@ -149,6 +156,9 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None,
             
         grid = game.get_grid()
         age_grid = game.get_age_grid()
+        
+        # Update generation counter
+        text.text = f'Generation: {int(age_grid.max())}'
         
         # Get coordinates of live cells
         live_xs, live_ys = np.where(grid == 1)
