@@ -9,7 +9,7 @@ from vispy.color import ColorArray
 from PyQt5.QtCore import Qt
 
 DEFAULT_SIZE = 500
-DEFAULT_INTERVAL = 100 
+DEFAULT_INTERVAL = 60 
 
 class GameOfLife:
     def __init__(self, size=DEFAULT_SIZE, random_seed=None, device='cuda'):

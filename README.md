@@ -23,8 +23,8 @@ A high-performance 3D visualization of Conway's Game of Life using PyTorch for c
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd <repository-name>
+git clone https://github.com/vcbbutler/BB-life
+cd BB-life
 ```
 
 2. Create and activate a virtual environment (recommended):
