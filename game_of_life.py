@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from mpl_toolkits.mplot3d import Axes3D
 
 class GameOfLife:
     def __init__(self, size=100, random_seed=None):
@@ -51,18 +52,41 @@ class GameOfLife:
     def get_grid(self):
         return self.grid.cpu().numpy()
 
-def animate_game(size=100, frames=100, interval=100):
+def animate_game(size=100, frames=200, interval=50):
     game = GameOfLife(size=size, random_seed=42)
-    fig, ax = plt.subplots()
-    
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    plt.style.use('dark_background')
+
     def update(frame):
         ax.clear()
         game.update()
-        ax.imshow(game.get_grid(), cmap='binary')
-        ax.set_title(f'Game of Life - Frame {frame}')
-        ax.axis('off')
-    
-    anim = FuncAnimation(fig, update, frames=frames, interval=interval)
+        grid = game.get_grid()
+        
+        # Get coordinates of live cells
+        xs, ys = np.where(grid == 1)
+        zs = np.full_like(xs, 0.5, dtype=float)  # All spheres at z=0.5
+        
+        # Draw spheres for live cells
+        ax.scatter(xs, ys, zs, s=60, c='cyan', edgecolors='white', alpha=0.9, marker='o', depthshade=True)
+        
+        # Set limits and appearance
+        ax.set_xlim(0, size)
+        ax.set_ylim(0, size)
+        ax.set_zlim(0, 1.5)
+        ax.set_title('Go and live among yourself', fontsize=14, pad=20)
+        ax.set_xlabel('X', labelpad=10)
+        ax.set_ylabel('Y', labelpad=10)
+        ax.set_zlabel('Alive', labelpad=10)
+        ax.view_init(elev=30, azim=frame * 1.8)
+        ax.set_facecolor('black')
+        fig.patch.set_facecolor('black')
+        ax.grid(False)
+        ax.xaxis.pane.fill = False
+        ax.yaxis.pane.fill = False
+        ax.zaxis.pane.fill = False
+
+    anim = FuncAnimation(fig, update, frames=frames, interval=interval, blit=False)
     plt.show()
 
 if __name__ == "__main__":
@@ -74,4 +98,4 @@ if __name__ == "__main__":
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
     
     # Run the animation
-    animate_game(size=100, frames=100, interval=100) 
+    animate_game(size=100, frames=200, interval=50) 
