@@ -6,6 +6,7 @@ from vispy.scene import visuals
 import time
 import argparse
 from vispy.color import ColorArray
+from PyQt5.QtCore import Qt
 
 DEFAULT_SIZE = 500
 DEFAULT_INTERVAL = 100 
@@ -84,7 +85,8 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None,
     game = GameOfLife(size=size, random_seed=random_seed, device=device)
     
     # Create a canvas and view
-    canvas = vispy.scene.SceneCanvas(keys='interactive', size=(800, 600), show=True)
+    canvas = vispy.scene.SceneCanvas(keys='interactive', size=(1920, 1080), resizable=True, show=True)
+    canvas.native.setWindowState(Qt.WindowMaximized)
     view = canvas.central_widget.add_view()
     view.camera = 'turntable'
     view.camera.fov = 45
