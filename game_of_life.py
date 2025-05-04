@@ -23,8 +23,8 @@ if torch.cuda.is_available():
     print(f"GPU device name: {torch.cuda.get_device_name(0)}")
 print("========================\n")
 
-DEFAULT_SIZE = 1000
-DEFAULT_INTERVAL = 60
+DEFAULT_SIZE = 250
+DEFAULT_INTERVAL = 30
 DEFAULT_INITIAL_DENSITY = 0.5
 
 class SettingsDialog(QDialog):
@@ -123,21 +123,36 @@ class GameOfLife:
             [1, 1, 1]
         ], dtype=torch.float32, device=self.device).view(1, 1, 3, 3)
         
-        # Pre-allocate padded grid to avoid memory allocation during updates
-        self.padded_grid = torch.zeros((size + 2, size + 2), dtype=torch.float32, device=self.device)
-        
         # Pre-allocate tensors for rules to avoid memory allocation
         self.underpop = torch.tensor(0.0, device=self.device)
         self.overpop = torch.tensor(0.0, device=self.device)
         self.reproduce = torch.tensor(1.0, device=self.device)
     
     def update(self):
-        # Update the padded grid
-        self.padded_grid[1:-1, 1:-1] = self.grid
+        # Create a padded grid with wrapped boundaries
+        padded_grid = torch.zeros((self.size + 2, self.size + 2), dtype=torch.float32, device=self.device)
+        
+        # Copy the main grid
+        padded_grid[1:-1, 1:-1] = self.grid
+        
+        # Wrap the boundaries
+        # Top and bottom rows
+        padded_grid[0, 1:-1] = self.grid[-1, :]  # Top row
+        padded_grid[-1, 1:-1] = self.grid[0, :]  # Bottom row
+        
+        # Left and right columns
+        padded_grid[1:-1, 0] = self.grid[:, -1]  # Left column
+        padded_grid[1:-1, -1] = self.grid[:, 0]  # Right column
+        
+        # Corners
+        padded_grid[0, 0] = self.grid[-1, -1]  # Top-left
+        padded_grid[0, -1] = self.grid[-1, 0]  # Top-right
+        padded_grid[-1, 0] = self.grid[0, -1]  # Bottom-left
+        padded_grid[-1, -1] = self.grid[0, 0]  # Bottom-right
         
         # Count neighbors using convolution
         neighbors = torch.nn.functional.conv2d(
-            self.padded_grid.view(1, 1, self.size + 2, self.size + 2),
+            padded_grid.view(1, 1, self.size + 2, self.size + 2),
             self.kernel,
             padding=0
         ).squeeze()
