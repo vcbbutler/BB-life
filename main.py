@@ -3,7 +3,7 @@ import argparse
 from PyQt5.QtWidgets import QApplication, QDialog
 import vispy
 
-from bblife.model import GameOfLife, SparseGameOfLife
+from bblife.model import GameOfLife
 from bblife.view import animate_game
 from bblife.settings import SettingsDialog
 from bblife.constants import (DEFAULT_SIZE, DEFAULT_INTERVAL, DEFAULT_INITIAL_DENSITY, 
@@ -33,8 +33,6 @@ def main():
                        choices=['cuda', 'cpu'], help="Computation device ('cuda' or 'cpu')")
     parser.add_argument("--mutation_rate", type=float, default=DEFAULT_MUTATION_RATE, 
                        help="Base mutation rate, scaled by cell age (log)")
-    parser.add_argument("--use_sparse", action='store_true', 
-                       help="Force use of sparse algorithm (auto for size > 2000)")
     parser.add_argument("--no_gui", action='store_true', 
                        help="Run simulation directly with command-line args, skipping GUI")
     
@@ -55,7 +53,6 @@ def main():
         frame_skip = args.frame_skip
         device_text = args.device # 'cuda' or 'cpu'
         mutation_rate = args.mutation_rate
-        use_sparse_flag = args.use_sparse or size > 2000
         
         # Validate device selection again based on availability
         if device_text == 'cuda' and not torch.cuda.is_available():
@@ -65,7 +62,6 @@ def main():
         print("\n--- Running with Command-Line Settings --- ")
         print(f"Size: {size}, Density: {initial_density:.2f}, Interval: {interval}ms, Frame Skip: {frame_skip}")
         print(f"Device: {device_text}, Mutation Rate: {mutation_rate:.4f}")
-        print(f"Using Sparse: {use_sparse_flag}")
         print("----------------------------------------\n")
     else:
         # Show settings dialog, initializing with args
@@ -91,27 +87,15 @@ def main():
         frame_skip = settings.frame_skip_spin.value()
         device_text = settings.device_combo.currentData() # Get 'cuda' or 'cpu' from data
         mutation_rate = settings.mutation_rate_spin.value()
-        
-        # Determine if we should use sparse algorithm (use_sparse arg overrides size check)
-        use_sparse_flag = args.use_sparse or size > 2000
     
     # Initialize the game model
-    if use_sparse_flag:
-        print("Using sparse algorithm for efficient large grid processing")
-        game = SparseGameOfLife(
-            size=size, 
-            initial_density=initial_density, 
-            random_seed=None, 
-            device=device_text
-        )
-    else:
-        game = GameOfLife(
-            size=size, 
-            initial_density=initial_density, 
-            random_seed=None, 
-            device=device_text, 
-            mutation_rate=mutation_rate
-        )
+    game = GameOfLife(
+        size=size, 
+        initial_density=initial_density, 
+        random_seed=None, 
+        device=device_text, 
+        mutation_rate=mutation_rate
+    )
     
     # Run the animation with settings
     animate_game(
