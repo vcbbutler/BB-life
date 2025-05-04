@@ -26,6 +26,8 @@ print("========================\n")
 DEFAULT_SIZE = 250
 DEFAULT_INTERVAL = 30
 DEFAULT_INITIAL_DENSITY = 0.5
+DEFAULT_OSCILLATOR_MUTATION_RATE = 0.01
+DEFAULT_STABLE_MUTATION_RATE = 0.01
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -123,7 +125,7 @@ class SettingsDialog(QDialog):
 
 class GameOfLife:
     def __init__(self, size=DEFAULT_SIZE, initial_density=DEFAULT_INITIAL_DENSITY, random_seed=None, device='cuda', 
-                 oscillator_mutation_rate=0.01, stable_mutation_rate=0.01):
+                 oscillator_mutation_rate=DEFAULT_OSCILLATOR_MUTATION_RATE, stable_mutation_rate=DEFAULT_STABLE_MUTATION_RATE):
         self.size = size
         self.device = device if torch.cuda.is_available() and device == 'cuda' else 'cpu'
         self.oscillator_mutation_rate = oscillator_mutation_rate
@@ -403,7 +405,7 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=D
             normalized_age = age / 20.0
             if normalized_age < 0.1:
                 return (0.0, 0.8, 0, 0.9)  # Less green, more yellow-green
-            elif normalized_age < 0.4:
+            elif normalized_age < 0.3:
                 return (0.6, 0.8, 0, 0.9)  # Yellow-green
             elif normalized_age < 0.6:
                 return (0.8, 0.8, 0, 0.9)  # Yellow
@@ -429,7 +431,7 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=D
     # Stability detection variables
     previous_cell_count = -1
     stable_generations = 0
-    STABILITY_THRESHOLD = 5  # Number of consecutive generations with same cell count to consider stable
+    STABILITY_THRESHOLD = 50 
 
     def update(ev):
         nonlocal running, generation, previous_cell_count, stable_generations
@@ -440,7 +442,7 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=D
         if stable_generations >= STABILITY_THRESHOLD:
             running = False
             text.text = f'STABLE AFTER {generation} GENERATIONS\nLive Cells: {previous_cell_count}\nPress SPACE to restart'
-            print(f"Simulation stabilized after {generation} generations with {previous_cell_count} cells")
+            print(f"Simulation stabilized after {generation - STABILITY_THRESHOLD} generations with {previous_cell_count} cells")
             return
             
         # Update game state multiple times per frame if frame_skip > 1
