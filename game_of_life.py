@@ -74,6 +74,9 @@ def animate_game(size=100, frames=200, interval=50, random_seed=None):
     ax = fig.add_subplot(111, projection='3d')
     plt.style.use('dark_background')
 
+    # Make the axes fill the entire figure (remove left/right margins)
+    ax.set_position([0, 0, 1, 1])
+
     # Add a floor surface (outside the update loop)
     floor_X, floor_Y = np.meshgrid(np.arange(size + 1), np.arange(size + 1))
     floor_Z = np.zeros_like(floor_X)  # Floor at z=0
@@ -113,6 +116,18 @@ def animate_game(size=100, frames=200, interval=50, random_seed=None):
     ax.xaxis.pane.fill = False
     ax.yaxis.pane.fill = False
     ax.zaxis.pane.fill = False
+    ax.xaxis.pane.set_edgecolor('none')
+    ax.yaxis.pane.set_edgecolor('none')
+    ax.zaxis.pane.set_edgecolor('none')
+
+    # Adjust the view angle (elevation and azimuth)
+    ax.view_init(elev=20, azim=-45)  # Lower elevation, different angle
+
+    # Remove margins
+    fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+
+    # Turn off axes completely
+    ax.set_axis_off()
 
     def update(frame):
         game.update()
@@ -121,7 +136,7 @@ def animate_game(size=100, frames=200, interval=50, random_seed=None):
         
         # Get coordinates of live cells
         live_xs, live_ys = np.where(grid == 1)
-        live_zs = np.full_like(live_xs, 0.5, dtype=float)
+        live_zs = np.full_like(live_xs, 0.1, dtype=float)
         
         # Get ages of live cells
         live_ages = age_grid[grid == 1]
