@@ -7,30 +7,34 @@ import time
 import argparse
 from vispy.color import ColorArray
 
+DEFAULT_SIZE = 500
+DEFAULT_INTERVAL = 100 
+
 class GameOfLife:
-    def __init__(self, size=200, random_seed=None):
+    def __init__(self, size=DEFAULT_SIZE, random_seed=None, device='cuda'):
         self.size = size
+        self.device = device if torch.cuda.is_available() and device == 'cuda' else 'cpu'
         if random_seed is not None:
             torch.manual_seed(random_seed)
         
-        # Initialize the grid and age grid on GPU
-        self.grid = torch.randint(0, 2, (size, size), dtype=torch.float32, device='cuda')
-        self.age_grid = torch.zeros((size, size), dtype=torch.float32, device='cuda')
+        # Initialize the grid and age grid on specified device
+        self.grid = torch.randint(0, 2, (size, size), dtype=torch.float32, device=self.device)
+        self.age_grid = torch.zeros((size, size), dtype=torch.float32, device=self.device)
         
         # Create convolution kernel for counting neighbors
         self.kernel = torch.tensor([
             [1, 1, 1],
             [1, 0, 1],
             [1, 1, 1]
-        ], dtype=torch.float32, device='cuda').view(1, 1, 3, 3)
+        ], dtype=torch.float32, device=self.device).view(1, 1, 3, 3)
         
         # Pre-allocate padded grid to avoid memory allocation during updates
-        self.padded_grid = torch.zeros((size + 2, size + 2), dtype=torch.float32, device='cuda')
+        self.padded_grid = torch.zeros((size + 2, size + 2), dtype=torch.float32, device=self.device)
         
         # Pre-allocate tensors for rules to avoid memory allocation
-        self.underpop = torch.tensor(0.0, device='cuda')
-        self.overpop = torch.tensor(0.0, device='cuda')
-        self.reproduce = torch.tensor(1.0, device='cuda')
+        self.underpop = torch.tensor(0.0, device=self.device)
+        self.overpop = torch.tensor(0.0, device=self.device)
+        self.reproduce = torch.tensor(1.0, device=self.device)
     
     def update(self):
         # Update the padded grid
@@ -58,7 +62,7 @@ class GameOfLife:
         self.age_grid = torch.where(
             new_grid == 1,
             self.age_grid + 1,
-            torch.tensor(0.0, device='cuda')
+            torch.tensor(0.0, device=self.device)
         )
         
         self.grid = new_grid
@@ -69,8 +73,15 @@ class GameOfLife:
     def get_age_grid(self):
         return self.age_grid.cpu().numpy()
 
-def animate_game(size=200, frames=200, interval=50, random_seed=None, frame_skip=1):
-    game = GameOfLife(size=size, random_seed=random_seed)
+def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None, frame_skip=1, device='cuda'):
+    if frame_skip < 1:
+        raise ValueError("frame_skip must be at least 1")
+    if size <= 0:
+        raise ValueError("size must be positive")
+    if interval <= 0:
+        raise ValueError("interval must be positive")
+        
+    game = GameOfLife(size=size, random_seed=random_seed, device=device)
     
     # Create a canvas and view
     canvas = vispy.scene.SceneCanvas(keys='interactive', size=(800, 600), show=True)
@@ -86,7 +97,7 @@ def animate_game(size=200, frames=200, interval=50, random_seed=None, frame_skip
     # Initialize with empty data
     pos = np.zeros((1, 3))
     colors = np.array([(0, 0, 0, 0)])  # Transparent
-    scatter.set_data(pos, edge_color='white', face_color=colors, size=10)
+    scatter.set_data(pos, edge_color=None, face_color=colors, size=10)
 
     # Create floor
     floor_vertices = np.array([
@@ -107,15 +118,27 @@ def animate_game(size=200, frames=200, interval=50, random_seed=None, frame_skip
 
     # Create color map for ages
     def get_color(age):
-        age = min(age / 15.0, 1.0)
-        if age < 0.33:
-            return (0, 0.5, 0, 0.9)  # Green
-        elif age < 0.66:
-            return (0.5, 0.5, 0, 0.9)  # Yellow
-        elif age < 0.9:
-            return (0.8, 0.3, 0, 0.9)  # Red
-        else:
-            return (0.5, 0.3, 0, 0.9)  # Brown
+        # Use a non-linear scale: very quick initial phase, longer taper
+        if age < 10:  # Quick initial phase (0-50)
+            normalized_age = age / 10.0
+            if normalized_age < 0.2:
+                return (0.3, 0.8, 0, 0.9)  # Less green, more yellow-green
+            elif normalized_age < 0.4:
+                return (0.6, 0.8, 0, 0.9)  # Yellow-green
+            elif normalized_age < 0.6:
+                return (0.8, 0.8, 0, 0.9)  # Yellow
+            elif normalized_age < 0.8:
+                return (1.0, 0.6, 0, 0.9)  # Orange-yellow
+            else:
+                return (1.0, 0.4, 0, 0.9)  # Orange
+        elif age < 50:  # Middle phase (50-200)
+            normalized_age = (age - 50) / 50.0
+            if normalized_age < 0.5:
+                return (1.0, 0.3, 0, 0.9)  # Red-orange
+            else:
+                return (0.8, 0.2, 0, 0.9)  # Brown
+        else:  # Final dark stage (200-400)
+            return (0.4, 0.1, 0, 0.9)  # Dark brown
 
     def update(ev):
         # Update game state multiple times per frame if frame_skip > 1
@@ -137,9 +160,22 @@ def animate_game(size=200, frames=200, interval=50, random_seed=None, frame_skip
         
         # Create colors array
         colors = np.array([get_color(age) for age in live_ages])
-        
+
+        # --- Scale marker size with distance from camera ---
+        # Get camera position in world coordinates
+        cam = view.camera
+        cam_pos = np.array(cam.transform.map([0, 0, cam.distance, 1])[:3])
+        # Compute distance from each point to camera
+        if len(pos) > 0:
+            distances = np.linalg.norm(pos - cam_pos, axis=1)
+            # Inverse scale: closer = bigger, farther = smaller
+            sizes = np.clip(6000 / (distances + 1), 4, 16)  # Increased scaling and min/max for larger points
+        else:
+            sizes = 6
+        # --------------------------------------------------
+
         # Update scatter plot
-        scatter.set_data(pos, edge_color='white', face_color=colors, size=10)
+        scatter.set_data(pos, edge_color=None, face_color=colors, size=sizes)
         
         # Force redraw
         canvas.update()
@@ -155,21 +191,18 @@ def animate_game(size=200, frames=200, interval=50, random_seed=None, frame_skip
 if __name__ == "__main__":
     # Set up command line argument parsing
     parser = argparse.ArgumentParser(description='Game of Life with customizable seeding')
+    parser.add_argument('--size', type=int, default=DEFAULT_SIZE,
+                      help=f'Size of the grid (default: {DEFAULT_SIZE})')
     parser.add_argument('--seed', type=str, default='time',
                       help='Seed type: "none" for no seed, "time" for time-based seed, or a number for custom seed')
-    parser.add_argument('--interval', type=int, default=50,
-                      help='Animation interval in milliseconds')
+    parser.add_argument('--interval', type=int, default=DEFAULT_INTERVAL,
+                      help=f'Animation interval in milliseconds (default: {DEFAULT_INTERVAL})')
     parser.add_argument('--frame-skip', type=int, default=1,
                       help='Number of game updates per frame')
+    parser.add_argument('--device', type=str, default='cuda',
+                      help='Device to run on: "cuda" or "cpu" (default: cuda)')
     args = parser.parse_args()
 
-    # Check if CUDA is available
-    if not torch.cuda.is_available():
-        print("CUDA is not available. Running on CPU instead.")
-        device = 'cpu'
-    else:
-        print(f"Using GPU: {torch.cuda.get_device_name(0)}")
-    
     # Handle seed selection
     if args.seed.lower() == 'none':
         random_seed = None
@@ -187,4 +220,5 @@ if __name__ == "__main__":
             print(f"Using time-based seed: {random_seed}")
     
     # Run the animation with command line arguments
-    animate_game(size=200, frames=200, interval=args.interval, random_seed=random_seed, frame_skip=args.frame_skip) 
+    animate_game(size=args.size, interval=args.interval, random_seed=random_seed, 
+                frame_skip=args.frame_skip, device=args.device) 
