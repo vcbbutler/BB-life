@@ -1,4 +1,4 @@
-torch==2.7.0
+torch==2.7.0+cu118
 numpy==2.0.2
 vispy==0.15.0
 PyQt5==5.15.11
