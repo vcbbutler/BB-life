@@ -3,6 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
+import time
+import argparse  # Add argparse for command line arguments
+from matplotlib.colors import LinearSegmentedColormap
 
 class GameOfLife:
     def __init__(self, size=100, random_seed=None):
@@ -65,11 +68,21 @@ class GameOfLife:
     def get_age_grid(self):
         return self.age_grid.cpu().numpy()
 
-def animate_game(size=100, frames=200, interval=50):
-    game = GameOfLife(size=size, random_seed=42)
+def animate_game(size=100, frames=200, interval=50, random_seed=None):
+    game = GameOfLife(size=size, random_seed=random_seed)
     fig = plt.figure(figsize=(16, 12))
     ax = fig.add_subplot(111, projection='3d')
     plt.style.use('dark_background')
+
+    # Create custom colormap with wider range of colors
+    colors = [
+        (0, 0.5, 0),      # Fresh green
+        (0.5, 0.5, 0),    # Yellow
+        (0.8, 0.3, 0),    # Red
+        (0.5, 0.3, 0)     # Brown
+    ]
+    n_bins = 100
+    custom_cmap = LinearSegmentedColormap.from_list("custom_life_colors", colors, N=n_bins)
 
     def update(frame):
         ax.clear()
@@ -84,8 +97,8 @@ def animate_game(size=100, frames=200, interval=50):
         # Get ages of live cells
         ages = age_grid[grid == 1]
         
-        # Create color map based on age
-        colors = plt.cm.viridis(ages / 10)  # Normalize ages to [0,1] range
+        # Create color map based on age using custom colormap
+        colors = custom_cmap(ages / 15)  # Increased age normalization for smoother transitions
         
         # Draw spheres for live cells with age-based colors
         ax.scatter(xs, ys, zs, s=100, c=colors, edgecolors='white', alpha=0.9, marker='o', depthshade=True)
@@ -110,6 +123,12 @@ def animate_game(size=100, frames=200, interval=50):
     plt.show()
 
 if __name__ == "__main__":
+    # Set up command line argument parsing
+    parser = argparse.ArgumentParser(description='Game of Life with customizable seeding')
+    parser.add_argument('--seed', type=str, default='time',
+                      help='Seed type: "none" for no seed, "time" for time-based seed, or a number for custom seed')
+    args = parser.parse_args()
+
     # Check if CUDA is available
     if not torch.cuda.is_available():
         print("CUDA is not available. Running on CPU instead.")
@@ -117,5 +136,21 @@ if __name__ == "__main__":
     else:
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
     
+    # Handle seed selection
+    if args.seed.lower() == 'none':
+        random_seed = None
+        print("Running with no seed (completely random)")
+    elif args.seed.lower() == 'time':
+        random_seed = int(time.time())
+        print(f"Using time-based seed: {random_seed}")
+    else:
+        try:
+            random_seed = int(args.seed)
+            print(f"Using custom seed: {random_seed}")
+        except ValueError:
+            print("Invalid seed value. Using time-based seed instead.")
+            random_seed = int(time.time())
+            print(f"Using time-based seed: {random_seed}")
+    
     # Run the animation
-    animate_game(size=100, frames=200, interval=50) 
+    animate_game(size=100, frames=200, interval=50, random_seed=random_seed) 
