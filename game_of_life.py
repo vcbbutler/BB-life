@@ -7,19 +7,113 @@ import time
 import argparse
 from vispy.color import ColorArray
 from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, 
+                            QLabel, QSpinBox, QDoubleSpinBox, QPushButton, 
+                            QComboBox, QGroupBox, QFormLayout)
 
-DEFAULT_SIZE = 500
-DEFAULT_INTERVAL = 60 
+# Debug CUDA configuration
+print("\n=== CUDA Configuration ===")
+print(f"PyTorch version: {torch.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+print(f"CUDA version: {torch.version.cuda if torch.cuda.is_available() else 'N/A'}")
+print(f"cuDNN version: {torch.backends.cudnn.version() if torch.cuda.is_available() else 'N/A'}")
+print(f"GPU device count: {torch.cuda.device_count() if torch.cuda.is_available() else 0}")
+if torch.cuda.is_available():
+    print(f"Current GPU device: {torch.cuda.current_device()}")
+    print(f"GPU device name: {torch.cuda.get_device_name(0)}")
+print("========================\n")
+
+DEFAULT_SIZE = 1000
+DEFAULT_INTERVAL = 60
+DEFAULT_INITIAL_DENSITY = 0.5
+
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Game of Life Settings")
+        self.setup_ui()
+        
+    def setup_ui(self):
+        layout = QVBoxLayout()
+        
+        # Grid Settings
+        grid_group = QGroupBox("Grid Settings")
+        grid_layout = QFormLayout()
+        
+        self.size_spin = QSpinBox()
+        self.size_spin.setRange(100, 2000)
+        self.size_spin.setValue(DEFAULT_SIZE)
+        self.size_spin.setSingleStep(100)
+        grid_layout.addRow("Grid Size:", self.size_spin)
+        
+        self.density_spin = QDoubleSpinBox()
+        self.density_spin.setRange(0.1, 0.9)
+        self.density_spin.setValue(DEFAULT_INITIAL_DENSITY)
+        self.density_spin.setSingleStep(0.1)
+        self.density_spin.setDecimals(2)
+        grid_layout.addRow("Initial Density:", self.density_spin)
+        
+        grid_group.setLayout(grid_layout)
+        layout.addWidget(grid_group)
+        
+        # Animation Settings
+        anim_group = QGroupBox("Animation Settings")
+        anim_layout = QFormLayout()
+        
+        self.interval_spin = QSpinBox()
+        self.interval_spin.setRange(10, 1000)
+        self.interval_spin.setValue(DEFAULT_INTERVAL)
+        self.interval_spin.setSingleStep(10)
+        anim_layout.addRow("Update Interval (ms):", self.interval_spin)
+        
+        self.frame_skip_spin = QSpinBox()
+        self.frame_skip_spin.setRange(1, 10)
+        self.frame_skip_spin.setValue(1)
+        anim_layout.addRow("Frame Skip:", self.frame_skip_spin)
+        
+        anim_group.setLayout(anim_layout)
+        layout.addWidget(anim_group)
+        
+        # Device Settings
+        device_group = QGroupBox("Device Settings")
+        device_layout = QFormLayout()
+        
+        self.device_combo = QComboBox()
+        cuda_available = torch.cuda.is_available()
+        if cuda_available:
+            self.device_combo.addItem("CUDA (GPU)", "cuda")
+            self.device_combo.addItem("CPU", "cpu")
+            self.device_combo.setCurrentIndex(0)  # Set CUDA as default
+        else:
+            self.device_combo.addItem("CPU (CUDA not available)", "cpu")
+        device_layout.addRow("Device:", self.device_combo)
+        
+        device_group.setLayout(device_layout)
+        layout.addWidget(device_group)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        self.ok_button = QPushButton("Start Simulation")
+        self.cancel_button = QPushButton("Cancel")
+        button_layout.addWidget(self.ok_button)
+        button_layout.addWidget(self.cancel_button)
+        layout.addLayout(button_layout)
+        
+        self.setLayout(layout)
+        
+        # Connect signals
+        self.ok_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
 
 class GameOfLife:
-    def __init__(self, size=DEFAULT_SIZE, random_seed=None, device='cuda'):
+    def __init__(self, size=DEFAULT_SIZE, initial_density=DEFAULT_INITIAL_DENSITY, random_seed=None, device='cuda'):
         self.size = size
         self.device = device if torch.cuda.is_available() and device == 'cuda' else 'cpu'
         if random_seed is not None:
             torch.manual_seed(random_seed)
         
-        # Initialize the grid and age grid on specified device
-        self.grid = torch.randint(0, 2, (size, size), dtype=torch.float32, device=self.device)
+        # Initialize the grid with specified density
+        self.grid = torch.bernoulli(torch.full((size, size), initial_density, device=self.device))
         self.age_grid = torch.zeros((size, size), dtype=torch.float32, device=self.device)
         
         # Create convolution kernel for counting neighbors
@@ -74,7 +168,7 @@ class GameOfLife:
     def get_age_grid(self):
         return self.age_grid.cpu().numpy()
 
-def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None, frame_skip=1, device='cuda'):
+def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=DEFAULT_INITIAL_DENSITY, frame_skip=1, device='cuda'):
     if frame_skip < 1:
         raise ValueError("frame_skip must be at least 1")
     if size <= 0:
@@ -82,7 +176,7 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None,
     if interval <= 0:
         raise ValueError("interval must be positive")
         
-    game = GameOfLife(size=size, random_seed=random_seed, device=device)
+    game = GameOfLife(size=size, initial_density=initial_density, random_seed=None, device=device)
     
     # Create a canvas and view
     canvas = vispy.scene.SceneCanvas(keys='interactive', size=(1920, 1080), resizable=True, show=True)
@@ -92,8 +186,8 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None,
     view.camera.fov = 45
     view.camera.distance = size * 1
 
-    # Create text display for generation counter
-    text = visuals.Text('Generation: 0', pos=(100, 50), color='white', font_size=12, parent=canvas.scene)
+    # Create text display for generation counter and status
+    text = visuals.Text('Generation: 0\nLive Cells: 0\nPress SPACE to start', pos=(100, 50), color='white', font_size=12, parent=canvas.scene)
     text.order = 1  # Ensure text is drawn on top
 
     # Create scatter plot
@@ -129,7 +223,6 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None,
             normalized_age = age / 20.0
             if normalized_age < 0.1:
                 return (0.0, 0.8, 0, 0.9)  # Less green, more yellow-green
-
             elif normalized_age < 0.4:
                 return (0.6, 0.8, 0, 0.9)  # Yellow-green
             elif normalized_age < 0.6:
@@ -149,16 +242,28 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None,
         else:
             return (0.2, 0.05, 0, 0.9)  # Very dark brown
 
+    # Initialize simulation state
+    running = False
+    generation = 0
+
     def update(ev):
+        nonlocal running, generation
+        if not running:
+            return
+            
         # Update game state multiple times per frame if frame_skip > 1
         for _ in range(frame_skip):
             game.update()
+            generation += 1
             
         grid = game.get_grid()
         age_grid = game.get_age_grid()
         
-        # Update generation counter
-        text.text = f'Generation: {int(age_grid.max())}'
+        # Count live cells
+        live_cells = int(grid.sum())
+        
+        # Update generation counter and live cell count
+        text.text = f'Generation: {generation}\nLive Cells: {live_cells}'
         
         # Get coordinates of live cells
         live_xs, live_ys = np.where(grid == 1)
@@ -192,6 +297,20 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None,
         # Force redraw
         canvas.update()
 
+    def on_key_press(event):
+        nonlocal running
+        if event.key == ' ':
+            running = not running
+            if running:
+                live_cells = int(game.get_grid().sum())
+                text.text = f'Generation: {generation}\nLive Cells: {live_cells}'
+            else:
+                live_cells = int(game.get_grid().sum())
+                text.text = f'Generation: {generation}\nLive Cells: {live_cells}\nPress SPACE to start'
+
+    # Connect key press event
+    canvas.events.key_press.connect(on_key_press)
+
     # Create timer
     timer = vispy.app.Timer(interval=interval/1000.0)  # Convert ms to seconds
     timer.connect(update)
@@ -200,37 +319,36 @@ def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, random_seed=None,
     # Run the app
     vispy.app.run()
 
-if __name__ == "__main__":
-    # Set up command line argument parsing
-    parser = argparse.ArgumentParser(description='Game of Life with customizable seeding')
-    parser.add_argument('--size', type=int, default=DEFAULT_SIZE,
-                      help=f'Size of the grid (default: {DEFAULT_SIZE})')
-    parser.add_argument('--seed', type=str, default='time',
-                      help='Seed type: "none" for no seed, "time" for time-based seed, or a number for custom seed')
-    parser.add_argument('--interval', type=int, default=DEFAULT_INTERVAL,
-                      help=f'Animation interval in milliseconds (default: {DEFAULT_INTERVAL})')
-    parser.add_argument('--frame-skip', type=int, default=1,
-                      help='Number of game updates per frame')
-    parser.add_argument('--device', type=str, default='cuda',
-                      help='Device to run on: "cuda" or "cpu" (default: cuda)')
-    args = parser.parse_args()
-
-    # Handle seed selection
-    if args.seed.lower() == 'none':
-        random_seed = None
-        print("Running with no seed (completely random)")
-    elif args.seed.lower() == 'time':
-        random_seed = int(time.time())
-        print(f"Using time-based seed: {random_seed}")
-    else:
-        try:
-            random_seed = int(args.seed)
-            print(f"Using custom seed: {random_seed}")
-        except ValueError:
-            print("Invalid seed value. Using time-based seed instead.")
-            random_seed = int(time.time())
-            print(f"Using time-based seed: {random_seed}")
+def main():
+    # Create Qt application
+    app = QApplication([])
     
-    # Run the animation with command line arguments
-    animate_game(size=args.size, interval=args.interval, random_seed=random_seed, 
-                frame_skip=args.frame_skip, device=args.device) 
+    # Debug CUDA information
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"CUDA device count: {torch.cuda.device_count()}")
+        print(f"CUDA device name: {torch.cuda.get_device_name(0)}")
+    
+    # Show settings dialog
+    settings = SettingsDialog()
+    if settings.exec_() != QDialog.Accepted:
+        return
+    
+    # Get settings values
+    size = settings.size_spin.value()
+    initial_density = settings.density_spin.value()
+    interval = settings.interval_spin.value()
+    frame_skip = settings.frame_skip_spin.value()
+    device = settings.device_combo.currentText()
+    
+    # Run the animation with settings
+    animate_game(
+        size=size,
+        interval=interval,
+        initial_density=initial_density,
+        frame_skip=frame_skip,
+        device=device
+    )
+
+if __name__ == "__main__":
+    main() 
