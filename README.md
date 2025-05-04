@@ -1,88 +1,119 @@
-# Game of Life 3D Visualization
+# Conway's Game of Life with GPU Acceleration
 
-A high-performance 3D visualization of Conway's Game of Life using PyTorch for computation and VisPy for rendering. The simulation runs on GPU for optimal performance.
+A 3D visualization of Conway's Game of Life using:
+- PyTorch for GPU-accelerated game logic
+- VisPy for 3D visualization
+- PyQt5 for the settings UI
 
 ## Features
 
-- GPU-accelerated Game of Life simulation using PyTorch
-- Real-time 3D visualization with VisPy
-- Interactive camera controls (rotate, zoom, pan)
-- Age-based cell coloring
-- Configurable simulation speed and frame skip
-- Customizable random seeding
+- GPU acceleration using PyTorch (CUDA)
+- 3D visualization with cell age-based coloring
+- Configurable grid size, density, and update speed
+- Age-based mutation system for emergent behavior
+- Sparse matrix implementation for very large grids
+- Stability detection to pause when patterns stabilize
 
-## Requirements
+## Project Structure
 
-- Python 3.8+
-- CUDA-capable GPU (NVIDIA)
-- PyTorch with CUDA support
+The project is organized into several modules, following the Separation of Concerns principle:
+
+- `model.py` - Game logic classes (GameOfLife and SparseGameOfLife)
+- `view.py` - 3D visualization code using VisPy
+- `settings.py` - Settings dialog using PyQt5
+- `constants.py` - Shared constants and configuration values
+- `main.py` - Program entry point and command-line argument handling
+- `run.bat` - Windows batch script to run the simulation
+
+## Setup
+
+### Requirements
+
+- Python 3.7 or newer
+- PyTorch (with CUDA support recommended)
 - VisPy
-- PyQt6
+- PyQt5
+- NumPy
 
-## Installation
+### Installation
 
-1. Clone the repository:
-```bash
-git clone https://github.com/vcbbutler/BB-life
-cd BB-life
+1. Clone this repository
+2. Install dependencies:
 ```
-
-2. Create and activate a virtual environment (recommended):
-```bash
-python -m venv venv
-# On Windows:
-.\venv\Scripts\activate
-# On Unix/MacOS:
-source venv/bin/activate
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
+pip install torch torchvision vispy pyqt5 numpy
 ```
 
 ## Usage
 
-Run the simulation with default settings:
-```bash
-python game_of_life.py
+### Run the simulation
+
+On Windows, simply run:
+```
+run.bat
 ```
 
-### Command Line Arguments
+Or directly using Python:
+```
+python main.py
+```
 
-- `--seed`: Seed type for random initialization
-  - `none`: No seed (completely random)
-  - `time`: Time-based seed (default)
-  - `<number>`: Custom seed value
-- `--interval`: Animation interval in milliseconds (default: 50)
-- `--frame-skip`: Number of game updates per frame (default: 1)
+### Command-line options
 
-Examples:
-```bash
-# Fast simulation with smooth visualization
-python game_of_life.py --interval 50 --frame-skip 2
+```
+python main.py --help
+```
 
-# Custom seed with slower updates
-python game_of_life.py --seed 42 --interval 100
+Available options:
+- `--size SIZE` - Grid size (default: 250)
+- `--interval INTERVAL` - Update interval in milliseconds (default: 30)
+- `--density DENSITY` - Initial density of live cells (default: 0.5)
+- `--frame_skip FRAME_SKIP` - Number of game updates per frame (default: 1)
+- `--device {cuda,cpu}` - Computation device (default: cuda if available)
+- `--mutation_rate MUTATION_RATE` - Base mutation rate (default: 0.002)
+- `--use_sparse` - Force use of sparse algorithm (auto for size > 2000)
+- `--no_gui` - Run with command-line arguments, skip settings dialog
 
-# Very fast simulation
-python game_of_life.py --interval 50 --frame-skip 3
+### Example
+
+Run a large 500x500 grid using the sparse algorithm on CPU:
+```
+python main.py --size 500 --device cpu --use_sparse
 ```
 
 ## Controls
 
-- **Mouse Left Button**: Rotate view
-- **Mouse Right Button**: Pan view
-- **Mouse Wheel**: Zoom in/out
-- **Space**: Pause/Resume animation
+- **Space** - Start/pause the simulation
+- **Mouse drag** - Rotate the view
+- **Mouse wheel** - Zoom in/out
 
-## Performance Tips
+## Implementation Details
 
-- Increase `frame-skip` for faster simulation
-- Adjust `interval` to control visualization smoothness
-- Larger values for both parameters will result in faster simulation but less smooth visualization
-- The simulation automatically uses GPU acceleration if available
+### Game Logic
+
+The simulation offers two different implementations:
+
+1. **Dense Representation (GameOfLife)**: 
+   - Uses PyTorch tensors for the entire grid
+   - Faster for medium-sized grids, especially with GPU acceleration
+   - Uses convolution operations for neighbor counting
+
+2. **Sparse Representation (SparseGameOfLife)**:
+   - Only tracks live cells and their neighbors
+   - More memory-efficient for very large grids
+   - Better performance for low-density patterns
+
+### Mutations
+
+The simulation includes an age-based mutation system:
+- Cells have a chance to mutate based on their age
+- Mutation probability increases logarithmically with age
+- Mutations can affect the cell itself or one of its neighbors
+- Creates emergent complex behaviors and prevents stagnation
+
+## Credits
+
+Inspired by Conway's Game of Life and extended with additional features.
 
 ## License
 
-[Your chosen license] 
+This project is open source and available under the MIT License. 

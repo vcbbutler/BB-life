@@ -1,51 +1,51 @@
 @echo off
-echo Setting up Game of Life environment...
+echo Setting up Conway's Game of Life environment...
 
-:: Check if conda is available
-where conda >nul 2>nul
+:: Check if Python is available
+where python >nul 2>nul
 if %ERRORLEVEL% neq 0 (
-    echo Error: Conda is not installed or not in PATH
-    echo Please install Miniconda or Anaconda first
+    echo Error: Python is not installed or not in PATH
+    echo Please install Python 3.7+ first
     pause
     exit /b 1
 )
 
-:: Create and activate conda environment
-echo Creating conda environment...
-call conda create -n gameoflife python=3.9 -y
+:: Check Python version
+python --version
+echo.
+
+:: Check if pip is available
+where pip >nul 2>nul
 if %ERRORLEVEL% neq 0 (
-    echo Error: Failed to create conda environment
+    echo Error: pip is not installed or not in PATH
     pause
     exit /b 1
 )
 
-:: Activate environment and install requirements
-echo Installing requirements...
-call conda activate gameoflife
-if %ERRORLEVEL% neq 0 (
-    echo Error: Failed to activate conda environment
-    pause
-    exit /b 1
-)
+:: Option to install with or without CUDA
+echo Do you want to install with CUDA support? (Requires NVIDIA GPU)
+echo 1. Yes, install with CUDA (recommended for NVIDIA GPUs)
+echo 2. No, install CPU-only version
+set /p cuda_choice="Enter your choice (1/2): "
 
-:: Install PyTorch with CUDA support directly from PyTorch channel
-call conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia -y
-if %ERRORLEVEL% neq 0 (
-    echo Error: Failed to install PyTorch with CUDA
-    pause
-    exit /b 1
+if "%cuda_choice%"=="1" (
+    echo Installing with CUDA support...
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+) else (
+    echo Installing CPU-only version...
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 )
 
 :: Install other requirements
-pip install numpy>=1.21.0 matplotlib>=3.4.0
-if %ERRORLEVEL% neq 0 (
-    echo Error: Failed to install additional requirements
-    pause
-    exit /b 1
-)
+echo Installing additional requirements...
+pip install numpy vispy PyQt5
+
+:: Install the package in development mode
+echo Installing BB-Life in development mode...
+pip install -e .
 
 echo.
 echo Installation completed successfully!
-echo You can now run the game using run.bat
+echo You can now run the simulation using run.bat
 echo.
 pause 

@@ -1,0 +1,6 @@
+# Byte-compiled / optimized / link editor files
+__pycache__/
+*.py[cod]
+*$py.class
+
+bblife/__pycache__/*
