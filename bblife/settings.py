@@ -2,8 +2,30 @@ import torch
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, 
                            QLabel, QSpinBox, QDoubleSpinBox, QPushButton, 
                            QComboBox, QGroupBox, QFormLayout)
+from PyQt5.QtCore import Qt
 from .constants import (DEFAULT_SIZE, DEFAULT_INTERVAL, DEFAULT_INITIAL_DENSITY, 
                       DEFAULT_MUTATION_RATE, DEFAULT_FRAME_SKIP)
+
+class PowerOfTwoSpinBox(QSpinBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setRange(8, 1000000)  # Allow very large sizes, minimum 8
+        self.setValue(256)  # Default to 256
+    
+    def stepBy(self, steps):
+        # Double or halve the value when stepping
+        if steps > 0:
+            # Going up, double the value
+            for _ in range(steps):
+                self.setValue(self.value() * 2)
+        else:
+            # Going down, halve the value
+            for _ in range(-steps):
+                self.setValue(max(8, self.value() // 2))
+                
+    def validate(self, text, pos):
+        # Allow any integer input
+        return (QSpinBox.validate(self, text, pos))
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -18,10 +40,7 @@ class SettingsDialog(QDialog):
         grid_group = QGroupBox("Grid Settings")
         grid_layout = QFormLayout()
         
-        self.size_spin = QSpinBox()
-        self.size_spin.setRange(100, 2000)
-        self.size_spin.setValue(DEFAULT_SIZE)
-        self.size_spin.setSingleStep(100)
+        self.size_spin = PowerOfTwoSpinBox()
         grid_layout.addRow("Grid Size:", self.size_spin)
         
         self.density_spin = QDoubleSpinBox()
