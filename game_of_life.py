@@ -129,48 +129,37 @@ class GameOfLife:
         self.reproduce = torch.tensor(1.0, device=self.device)
     
     def update(self):
-        # Create a padded grid with wrapped boundaries
-        padded_grid = torch.zeros((self.size + 2, self.size + 2), dtype=torch.float32, device=self.device)
-        
-        # Copy the main grid
-        padded_grid[1:-1, 1:-1] = self.grid
-        
-        # Wrap the boundaries
-        # Top and bottom rows
-        padded_grid[0, 1:-1] = self.grid[-1, :]  # Top row
-        padded_grid[-1, 1:-1] = self.grid[0, :]  # Bottom row
-        
-        # Left and right columns
-        padded_grid[1:-1, 0] = self.grid[:, -1]  # Left column
-        padded_grid[1:-1, -1] = self.grid[:, 0]  # Right column
-        
-        # Corners
-        padded_grid[0, 0] = self.grid[-1, -1]  # Top-left
-        padded_grid[0, -1] = self.grid[-1, 0]  # Top-right
-        padded_grid[-1, 0] = self.grid[0, -1]  # Bottom-left
-        padded_grid[-1, -1] = self.grid[0, 0]  # Bottom-right
+        # Pad the grid with circular boundaries using torch.nn.functional.pad
+        # Ensure grid is float32 for padding if it isn't already
+        grid_float = self.grid.float() 
+        padded_grid = torch.nn.functional.pad(
+            grid_float.unsqueeze(0).unsqueeze(0), # Add batch and channel dims
+            (1, 1, 1, 1),                      # Pad by 1 on all sides (left, right, top, bottom)
+            mode='circular'
+        ) # Keep batch and channel dims for conv2d
         
         # Count neighbors using convolution
         neighbors = torch.nn.functional.conv2d(
-            padded_grid.view(1, 1, self.size + 2, self.size + 2),
+            padded_grid, 
             self.kernel,
-            padding=0
-        ).squeeze()
+            padding=0 # No padding needed as it's handled above
+        ).squeeze() # Remove batch and channel dims after conv
         
         # Apply Game of Life rules using pre-allocated tensors
-        new_grid = torch.where(
-            (self.grid == 1) & ((neighbors < 2) | (neighbors > 3)),
-            self.underpop,
-            torch.where(
-                (self.grid == 0) & (neighbors == 3),
-                self.reproduce,
-                self.grid
-            )
-        )
+        # Ensure comparison tensors match the device and potentially dtype of neighbors and grid
+        # (Assuming grid elements are 0.0 or 1.0 after bernoulli/update)
+        is_alive = (self.grid == 1.0)
+        is_dead = ~is_alive # Equivalent to self.grid == 0.0
+
+        survives = is_alive & ((neighbors == 2) | (neighbors == 3))
+        births = is_dead & (neighbors == 3)
+
+        new_grid = torch.zeros_like(self.grid)
+        new_grid[survives | births] = 1.0
         
         # Update age grid
         self.age_grid = torch.where(
-            new_grid == 1,
+            new_grid == 1.0,
             self.age_grid + 1,
             torch.tensor(0.0, device=self.device)
         )
@@ -183,15 +172,102 @@ class GameOfLife:
     def get_age_grid(self):
         return self.age_grid.cpu().numpy()
 
-def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=DEFAULT_INITIAL_DENSITY, frame_skip=1, device='cuda'):
+class SparseGameOfLife:
+    """A memory-efficient implementation of Game of Life for very large grids.
+    Instead of storing the full grid, it only tracks live cells and their neighbors.
+    This is much more efficient for large, sparse grids (low density of live cells)."""
+    
+    def __init__(self, size=DEFAULT_SIZE, initial_density=DEFAULT_INITIAL_DENSITY, random_seed=None, device='cpu'):
+        self.size = size
+        self.device = device if torch.cuda.is_available() and device == 'cuda' else 'cpu'
+        if random_seed is not None:
+            np.random.seed(random_seed)  # Using numpy random for sparse initialization
+        
+        # Initialize with sparse representation
+        # We'll use a dictionary to store live cells and their ages
+        # Keys are (x, y) coordinates, values are ages
+        self.live_cells = {}
+        
+        # Initialize with random live cells based on density
+        num_cells = int(size * size * initial_density)
+        for _ in range(num_cells):
+            x, y = np.random.randint(0, size, 2)
+            self.live_cells[(int(x), int(y))] = 0  # Age starts at 0
+    
+    def _get_neighbors(self, x, y):
+        """Get the coordinates of all 8 neighbors with toroidal wrapping."""
+        neighbors = []
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                if dx == 0 and dy == 0:
+                    continue  # Skip the cell itself
+                nx = (x + dx) % self.size
+                ny = (y + dy) % self.size
+                neighbors.append((nx, ny))
+        return neighbors
+    
+    def update(self):
+        """Update the game state using the rules of Conway's Game of Life."""
+        # Count all neighbors of live cells
+        neighbor_counts = {}
+        cells_to_check = set()
+        
+        # Count neighbors and collect all cells that need to be checked
+        for cell in self.live_cells:
+            x, y = cell
+            # Add neighbors to the count
+            for nx, ny in self._get_neighbors(x, y):
+                neighbor_counts[(nx, ny)] = neighbor_counts.get((nx, ny), 0) + 1
+                cells_to_check.add((nx, ny))
+            # Also check the live cell itself
+            cells_to_check.add(cell)
+        
+        # Apply the rules
+        new_live_cells = {}
+        for cell in cells_to_check:
+            x, y = cell
+            count = neighbor_counts.get(cell, 0)
+            is_alive = cell in self.live_cells
+            
+            # Apply Game of Life rules
+            if is_alive and (count == 2 or count == 3):
+                # Cell stays alive
+                new_live_cells[cell] = self.live_cells[cell] + 1  # Increment age
+            elif not is_alive and count == 3:
+                # Dead cell becomes alive
+                new_live_cells[cell] = 0  # New cell starts with age 0
+        
+        # Update the state
+        self.live_cells = new_live_cells
+    
+    def get_grid(self):
+        """Convert sparse representation to dense grid for visualization."""
+        grid = np.zeros((self.size, self.size), dtype=np.float32)
+        for (x, y) in self.live_cells:
+            grid[x, y] = 1
+        return grid
+    
+    def get_age_grid(self):
+        """Convert sparse age representation to dense grid for visualization."""
+        grid = np.zeros((self.size, self.size), dtype=np.float32)
+        for (x, y), age in self.live_cells.items():
+            grid[x, y] = age
+        return grid
+
+def animate_game(size=DEFAULT_SIZE, interval=DEFAULT_INTERVAL, initial_density=DEFAULT_INITIAL_DENSITY, frame_skip=1, device='cuda', use_sparse=False):
     if frame_skip < 1:
         raise ValueError("frame_skip must be at least 1")
     if size <= 0:
         raise ValueError("size must be positive")
     if interval <= 0:
         raise ValueError("interval must be positive")
-        
-    game = GameOfLife(size=size, initial_density=initial_density, random_seed=None, device=device)
+    
+    # Use sparse algorithm for very large grids or when explicitly requested
+    if use_sparse or size > 2000:
+        print("Using sparse algorithm for efficient large grid processing")
+        game = SparseGameOfLife(size=size, initial_density=initial_density, random_seed=None, device=device)
+    else:
+        game = GameOfLife(size=size, initial_density=initial_density, random_seed=None, device=device)
     
     # Create a canvas and view
     canvas = vispy.scene.SceneCanvas(keys='interactive', size=(1920, 1080), resizable=True, show=True)
@@ -380,13 +456,17 @@ def main():
     frame_skip = settings.frame_skip_spin.value()
     device = settings.device_combo.currentText()
     
+    # Determine if we should use sparse algorithm
+    use_sparse = size > 2000
+    
     # Run the animation with settings
     animate_game(
         size=size,
         interval=interval,
         initial_density=initial_density,
         frame_skip=frame_skip,
-        device=device
+        device=device,
+        use_sparse=use_sparse
     )
 
 if __name__ == "__main__":
