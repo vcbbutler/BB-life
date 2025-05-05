@@ -1,10 +1,7 @@
 # Conway's Game of Life with GPU Acceleration
 ![Demo of Conway's Game of Life](demo.gif)
 
-A 3D visualization of Conway's Game of Life using:
-- PyTorch for GPU-accelerated game logic
-- VisPy for 3D visualization
-- PyQt5 for the settings UI
+A colorful visualization of Conway's Game of Life using PyTorch for GPU-accelerated game logic
 
 ## Features
 
@@ -17,7 +14,7 @@ A 3D visualization of Conway's Game of Life using:
 
 ## Project Structure
 
-The project is organized into several modules, following the Separation of Concerns principle:
+The project is organized into several modules:
 
 - `model.py` - Game logic classes (GameOfLife and SparseGameOfLife)
 - `view.py` - 3D visualization code using VisPy
@@ -71,7 +68,6 @@ Available options:
 - `--frame_skip FRAME_SKIP` - Number of game updates per frame (default: 1)
 - `--device {cuda,cpu}` - Computation device (default: cuda if available)
 - `--mutation_rate MUTATION_RATE` - Base mutation rate (default: 0.002)
-- `--use_sparse` - Force use of sparse algorithm (auto for size > 2000)
 - `--no_gui` - Run with command-line arguments, skip settings dialog
 
 ### Example
@@ -87,21 +83,11 @@ python main.py --size 500 --device cpu --use_sparse
 - **Mouse drag** - Rotate the view
 - **Mouse wheel** - Zoom in/out
 
-## Implementation Details
-
 ### Game Logic
 
-The simulation offers two different implementations:
-
-1. **Dense Representation (GameOfLife)**: 
    - Uses PyTorch tensors for the entire grid
    - Faster for medium-sized grids, especially with GPU acceleration
    - Uses convolution operations for neighbor counting
-
-2. **Sparse Representation (SparseGameOfLife)**:
-   - Only tracks live cells and their neighbors
-   - More memory-efficient for very large grids
-   - Better performance for low-density patterns
 
 ### Mutations
 
