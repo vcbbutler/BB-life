@@ -1,10 +1,7 @@
 # Conway's Game of Life with GPU Acceleration
 ![Demo of Conway's Game of Life](demo.gif)
 
-A 3D visualization of Conway's Game of Life using:
-- PyTorch for GPU-accelerated game logic
-- VisPy for 3D visualization
-- PyQt5 for the settings UI
+A colorful visualization of Conway's Game of Life using PyTorch for GPU-accelerated game logic
 
 ## Features
 
@@ -16,7 +13,7 @@ A 3D visualization of Conway's Game of Life using:
 
 ## Project Structure
 
-The project is organized into several modules, following the Separation of Concerns principle:
+The project is organized into several modules:
 
 - `model.py` - Game logic class (GameOfLife)
 - `view.py` - 3D visualization code using VisPy
@@ -84,8 +81,6 @@ python main.py --size 500 --device cpu
 - **Space** - Start/pause the simulation
 - **Mouse drag** - Rotate the view
 - **Mouse wheel** - Zoom in/out
-
-## Implementation Details
 
 ### Game Logic
 
