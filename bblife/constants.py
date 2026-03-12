@@ -4,9 +4,20 @@ DEFAULT_INTERVAL = 30
 DEFAULT_INITIAL_DENSITY = 0.5
 DEFAULT_MUTATION_RATE = 0.001
 DEFAULT_FRAME_SKIP = 1
+DEFAULT_RULE = "B3/S23"
+
+# Rule presets in canonical B/S notation
+RULE_PRESETS = {
+    "Conway Life": "B3/S23",
+    "HighLife": "B36/S23",
+    "Day & Night": "B3678/S34678",
+    "Maze": "B3/S12345",
+    "2x2": "B36/S125",
+}
 
 # Stability detection
 STABILITY_THRESHOLD = 50
+METRICS_WINDOW = 64
 
 # Visualization settings
 WINDOW_SIZE = (1920, 1080)

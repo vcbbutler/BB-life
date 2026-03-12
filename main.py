@@ -7,7 +7,7 @@ from bblife.model import GameOfLife
 from bblife.view import animate_game
 from bblife.settings import SettingsDialog
 from bblife.constants import (DEFAULT_SIZE, DEFAULT_INTERVAL, DEFAULT_INITIAL_DENSITY, 
-                          DEFAULT_MUTATION_RATE, DEFAULT_FRAME_SKIP)
+                          DEFAULT_MUTATION_RATE, DEFAULT_FRAME_SKIP, DEFAULT_RULE)
 
 def print_cuda_info():
     """Print information about CUDA configuration."""
@@ -33,6 +33,8 @@ def main():
                        choices=['cuda', 'cpu'], help="Computation device ('cuda' or 'cpu')")
     parser.add_argument("--mutation_rate", type=float, default=DEFAULT_MUTATION_RATE, 
                        help="Base mutation rate, scaled by cell age (log)")
+    parser.add_argument("--rule", type=str, default=DEFAULT_RULE,
+                       help="Life-like rulestring in B/S notation (example: B3/S23)")
     parser.add_argument("--no_gui", action='store_true', 
                        help="Run simulation directly with command-line args, skipping GUI")
     
@@ -53,6 +55,7 @@ def main():
         frame_skip = args.frame_skip
         device_text = args.device # 'cuda' or 'cpu'
         mutation_rate = args.mutation_rate
+        rule = args.rule
         
         # Validate device selection again based on availability
         if device_text == 'cuda' and not torch.cuda.is_available():
@@ -61,7 +64,7 @@ def main():
         
         print("\n--- Running with Command-Line Settings --- ")
         print(f"Size: {size}, Density: {initial_density:.2f}, Interval: {interval}ms, Frame Skip: {frame_skip}")
-        print(f"Device: {device_text}, Mutation Rate: {mutation_rate:.4f}")
+        print(f"Device: {device_text}, Mutation Rate: {mutation_rate:.4f}, Rule: {rule}")
         print("----------------------------------------\n")
     else:
         # Show settings dialog, initializing with args
@@ -71,6 +74,7 @@ def main():
         settings.interval_spin.setValue(args.interval)
         settings.frame_skip_spin.setValue(args.frame_skip)
         settings.mutation_rate_spin.setValue(args.mutation_rate)
+        settings.set_rule_and_sync_preset(args.rule)
         # Set device combo based on arg and availability
         if args.device == 'cuda' and torch.cuda.is_available():
             settings.device_combo.setCurrentIndex(settings.device_combo.findData('cuda'))
@@ -87,6 +91,7 @@ def main():
         frame_skip = settings.frame_skip_spin.value()
         device_text = settings.device_combo.currentData() # Get 'cuda' or 'cpu' from data
         mutation_rate = settings.mutation_rate_spin.value()
+        rule = settings.get_rule_value()
     
     # Initialize the game model
     game = GameOfLife(
@@ -94,7 +99,8 @@ def main():
         initial_density=initial_density, 
         random_seed=None, 
         device=device_text, 
-        mutation_rate=mutation_rate
+        mutation_rate=mutation_rate,
+        rule=rule
     )
     
     # Run the animation with settings

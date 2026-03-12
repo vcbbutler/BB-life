@@ -47,8 +47,6 @@ echo.
 :: Run the simulation with default settings
 echo Starting simulation...
 echo.
-echo Press SPACE to start/pause the simulation
-echo.
 
 :: Check if CUDA is available and set appropriate device
 python -c "import torch; print('CUDA Available:', torch.cuda.is_available())"
