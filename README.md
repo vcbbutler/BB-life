@@ -34,8 +34,17 @@ The project is organized into several modules:
 
 ### Installation
 
-1. Clone this repository
-2. Install dependencies:
+**Recommended (Windows):** Use the installer script, which requires Conda (Miniconda or Anaconda) and creates the `gameoflife` environment that `run.bat` uses.
+
+1. Clone this repository.
+2. If you don't have Conda, install [Miniconda for Windows](https://docs.conda.io/en/latest/miniconda.html), then run:
+   ```
+   install.bat
+   ```
+3. If Conda is already installed, run `install.bat`. It will create the `gameoflife` environment and install dependencies (with an option for CUDA or CPU-only PyTorch).
+
+**Alternative (manual / non-Conda):** Install dependencies into your global or preferred Python, then run the simulation with `python main.py` (do not rely on `run.bat`, which expects the Conda env `gameoflife`).
+
 ```
 pip install torch torchvision vispy pyqt5 numpy
 ```

@@ -10,9 +10,17 @@ echo ^| with mutation and age-based colors  ^|
 echo +-------------------------------------+
 echo.
 
-:: Try to find Anaconda and activate the environment
+:: Try to find Conda (Miniconda or Anaconda) and activate the environment
 echo Activating Conda environment 'gameoflife'...
-call "%USERPROFILE%\anaconda3\Scripts\activate.bat" gameoflife || call "%CONDA_EXE%\..\..\Scripts\activate.bat" gameoflife || call conda activate gameoflife
+if exist "%USERPROFILE%\miniconda3\Scripts\activate.bat" (
+    call "%USERPROFILE%\miniconda3\Scripts\activate.bat" gameoflife
+) else if exist "%USERPROFILE%\anaconda3\Scripts\activate.bat" (
+    call "%USERPROFILE%\anaconda3\Scripts\activate.bat" gameoflife
+) else if defined CONDA_EXE (
+    call "%CONDA_EXE%\..\..\Scripts\activate.bat" gameoflife
+) else (
+    call conda activate gameoflife
+)
 
 if "%CONDA_DEFAULT_ENV%" NEQ "gameoflife" (
     echo WARNING: Failed to activate Conda environment 'gameoflife'.
